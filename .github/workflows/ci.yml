@@ -19,7 +19,13 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install shellcheck
-        run: sudo apt-get update && sudo apt-get install -y shellcheck
+        run: |
+          if [ "$RUNNER_OS" = macOS ]; then
+            brew install shellcheck
+          else
+            sudo apt-get update
+            sudo apt-get install -y shellcheck
+          fi
 
       - name: Syntax check
         run: |
@@ -63,7 +69,20 @@ jobs:
           grep -q '^//registry.npmjs.org/:_authToken=npm_' "$npmrc"
           grep -q '^fund=false$' "$npmrc" || { echo "provision dropped unrelated settings"; exit 1; }
 
-          ./scripts/npm-auth.sh unset --npmrc "$npmrc"
+          # Point HOME at an npmrc that must survive, so an unset that ignores
+          # --npmrc fails here instead of quietly editing the wrong file.
+          printf '%s\n' '//registry.npmjs.org/:_authToken=npm_555555555555555555555555555555555555' \
+            >"$RUNNER_TEMP/decoy.npmrc"
+          HOME="$RUNNER_TEMP/decoy-home" NPM_CONFIG_USERCONFIG="$RUNNER_TEMP/decoy.npmrc" \
+            ./scripts/npm-auth.sh provision --npmrc "$npmrc" >/dev/null
+          grep -q '_authToken=' "$RUNNER_TEMP/decoy.npmrc"
+
+          HOME="$RUNNER_TEMP/decoy-home" NPM_CONFIG_USERCONFIG="$RUNNER_TEMP/decoy.npmrc" \
+            ./scripts/npm-auth.sh unset --npmrc "$npmrc" >/dev/null
+
+          lines="$(grep -c '_authToken=' "$RUNNER_TEMP/decoy.npmrc" || true)"
+          [ "$lines" = "1" ] || { echo "unset ignored --npmrc and edited the default npmrc"; exit 1; }
+
           lines="$(grep -c '_authToken=' "$npmrc" || true)"
           [ "$lines" = "0" ] || { echo "unset left $lines token lines"; exit 1; }
           [ "$(stat -c '%a' "$npmrc" 2>/dev/null || stat -f '%Lp' "$npmrc")" = "600" ]

@@ -171,10 +171,6 @@ cmd_show() {
 
 cmd_unset() {
 	local path="$USERCONFIG" tmp
-	[[ -f "$path" ]] || {
-		printf 'npmrc: %s (missing, nothing to remove)\n' "$path"
-		return 0
-	}
 
 	while [[ $# -gt 0 ]]; do
 		case "$1" in
@@ -189,6 +185,11 @@ cmd_unset() {
 		esac
 		shift
 	done
+
+	[[ -f "$path" ]] || {
+		printf 'npmrc: %s (missing, nothing to remove)\n' "$path"
+		return 0
+	}
 
 	tmp="$(mktemp "${path}.XXXXXX")"
 	chmod 600 "$tmp"
