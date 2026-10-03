@@ -9,6 +9,17 @@ permissions:
   contents: read
 
 jobs:
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The runbooks are the process of record. If they name a link, a local
+      # path, or a section that no longer exists, agents follow a broken
+      # instruction, so the docs fail the build instead.
+      - name: Runbooks still describe this repository
+        run: bash scripts/check-sop-links.sh
+
   scripts:
     strategy:
       fail-fast: false
