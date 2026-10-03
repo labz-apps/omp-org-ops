@@ -13,6 +13,12 @@ registry_host() {
 	printf '%s' "${host%/}"
 }
 
+# GNU stat and BSD stat disagree on the flag for octal mode. The npmrc ends up on
+# developer laptops as often as on CI, so ask for the mode in a way both accept.
+file_mode() {
+	stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"
+}
+
 # Drops every auth line for the registry, in both the canonical form npm writes
 # (/host/:_authToken=) and the scheme-less variant, so re-running provision on a
 # hand-written or older npmrc cannot leave a second credential behind.
@@ -151,7 +157,7 @@ cmd_show() {
 	fi
 
 	local mode count
-	mode="$(stat -c '%a' "$path")"
+	mode="$(file_mode "$path")"
 	count="$(grep -c "^//$(registry_host "$REGISTRY")/:_authToken=." "$path" || true)"
 
 	printf 'npmrc: %s\n' "$path"
@@ -165,10 +171,6 @@ cmd_show() {
 
 cmd_unset() {
 	local path="$USERCONFIG" tmp
-	[[ -f "$path" ]] || {
-		printf 'npmrc: %s (missing, nothing to remove)\n' "$path"
-		return 0
-	}
 
 	while [[ $# -gt 0 ]]; do
 		case "$1" in
@@ -183,6 +185,11 @@ cmd_unset() {
 		esac
 		shift
 	done
+
+	[[ -f "$path" ]] || {
+		printf 'npmrc: %s (missing, nothing to remove)\n' "$path"
+		return 0
+	}
 
 	tmp="$(mktemp "${path}.XXXXXX")"
 	chmod 600 "$tmp"
