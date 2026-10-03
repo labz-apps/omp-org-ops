@@ -98,6 +98,99 @@ jobs:
           [ "$lines" = "0" ] || { echo "unset left $lines token lines"; exit 1; }
           [ "$(stat -c '%a' "$npmrc" 2>/dev/null || stat -f '%Lp' "$npmrc")" = "600" ]
 
+      - name: Self-test the release gate, offline
+        run: |
+          set -euo pipefail
+          gate=./scripts/npm-release-gate.sh
+          pkg="$RUNNER_TEMP/gate"
+
+          # A missing manifest fails and does not invent a package name.
+          out="$($gate --package-dir "$RUNNER_TEMP/no-such-dir" 2>&1)" && {
+            echo "expected a missing manifest to fail"; exit 1;
+          }
+          printf '%s' "$out" | grep -q 'manifest       \[fail\] no package.json'
+
+          # A malformed manifest is reported as such.
+          mkdir -p "$pkg/broken"
+          printf 'not json at all\n' >"$pkg/broken/package.json"
+          out="$($gate --package-dir "$pkg/broken" 2>&1)" && {
+            echo "expected a malformed manifest to fail"; exit 1;
+          }
+          printf '%s' "$out" | grep -q 'manifest       \[fail\]'
+
+          # A manifest with no version cannot be released.
+          mkdir -p "$pkg/no-version"
+          printf '{"name":"@buckeyestudio/toh"}\n' >"$pkg/no-version/package.json"
+          out="$($gate --package-dir "$pkg/no-version" 2>&1)" && {
+            echo "expected a versionless manifest to fail"; exit 1;
+          }
+
+          # oh-my-pi's root manifest is private, so npm would refuse it.
+          mkdir -p "$pkg/private"
+          printf '{"name":"omp","version":"0.0.0","private":true}\n' >"$pkg/private/package.json"
+          out="$($gate --package-dir "$pkg/private" --approved-by board 2>&1)" && {
+            echo "expected a private manifest to fail"; exit 1;
+          }
+          printf '%s' "$out" | grep -q 'not_private    \[fail\] omp is marked private'
+
+          # An unapproved release never gates green.
+          out="$($gate --package @buckeyestudio/toh@9.9.9 2>&1)" && {
+            echo "expected an unapproved release to fail"; exit 1;
+          }
+          printf '%s' "$out" | grep -q 'approval       \[fail\] no approval recorded'
+
+          # An approval is recorded when one is given. This asserts the approval
+          # check alone, not overall: on a runner there is no npm token, so the
+          # ownership check correctly fails and would mask the assertion.
+          out="$($gate --package @buckeyestudio/toh@9.9.9 --approved-by board 2>&1)" || true
+          printf '%s' "$out" | grep -q 'approval       \[pass\] approved by board'
+
+          # The gate reports, it does not upload: consulting the registry must
+          # surface a version_free check, and reject one that is already taken.
+          if npm view @buckeyestudio/toh-invariants@0.1.1-rc.2 version >/dev/null 2>&1; then
+            out="$($gate --package @buckeyestudio/toh-invariants@0.1.1-rc.2 \
+              --approved-by board --check-registry 2>&1)" && {
+              echo "expected an already-published version to fail"; exit 1;
+            }
+            printf '%s' "$out" | grep -q 'version_free   \[fail\]'
+          else
+            echo "::notice::registry unreachable or fixture absent, skipping the taken-version assert"
+            $gate --package @buckeyestudio/toh@9.9.9 --approved-by board \
+              --check-registry 2>&1 | grep -q 'version_free'
+          fi
+
+          # An unreachable registry must not read as "the version is free".
+          if out="$(NPM_REGISTRY=https://registry.invalid/ \
+            $gate --package @buckeyestudio/toh@9.9.9 --approved-by board \
+            --check-registry 2>&1)"; then
+            echo "expected an unreachable registry to fail, not to pass"
+            exit 1
+          fi
+          printf '%s' "$out" | grep -q 'version_free   \[fail\]'
+
+          # Usage errors are distinguishable from check failures.
+          $gate --package bogus >/dev/null 2>&1 && {
+            echo "expected a versionless --package to be a usage error"; exit 1;
+          } || [ "$?" = "2" ]
+          $gate --nonsense >/dev/null 2>&1 && {
+            echo "expected an unknown flag to be a usage error"; exit 1;
+          } || [ "$?" = "2" ]
+
+          # A report records the approval and states that nothing was uploaded.
+          $gate --package @buckeyestudio/toh@9.9.9 --approved-by board \
+            --report "$RUNNER_TEMP/gate-report" >/dev/null || true
+          report="$RUNNER_TEMP/gate-report/npm-release-gate-report.txt"
+          grep -q '^approved_by=board$' "$report"
+          grep -q '^result=pass$' "$report" || grep -q '^result=fail$' "$report"
+          grep -q '^uploaded=no$' "$report"
+          grep -q '^package=@buckeyestudio/toh@9.9.9$' "$report"
+
+          # The gate must never be able to upload, whatever it is handed.
+          if grep -qE 'npm +publish|npm +unpublish|npm +dist-tag|npm +deprecate' scripts/npm-release-gate.sh; then
+            echo "the release gate must not contain an upload command"
+            exit 1
+          fi
+
       - name: Self-test rejects a malformed token
         run: |
           set -euo pipefail

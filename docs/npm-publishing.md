@@ -39,6 +39,72 @@ Environment:
 | `NPM_CONFIG_USERCONFIG` | `$HOME/.npmrc` | npmrc path to write |
 | `NPM_PROBE_SPEC` | `@buckeyestudio/toh-invariants@0.1.1-rc.2` | Package@version reused by `--probe` |
 
+## Releases are approved, never assumed
+
+The board approves each npm release explicitly. Approval is therefore an input to
+the release gate, not something the tooling infers from a green CI run or a
+comment.
+
+`scripts/npm-release-gate.sh` is the check that has to pass before a publish. It
+reads a manifest, then reports one line per check:
+
+```
+$ ./scripts/npm-release-gate.sh --package @oh-my-pi/pi-tui@18.5.0 --approved-by board
+release gate
+   package: @oh-my-pi/pi-tui@18.5.0
+   date: 2026-10-03T03:07:45Z
+
+   manifest       [pass] @oh-my-pi/pi-tui@18.5.0 (from --package)
+   not_private    [pass] manifest is publishable
+   scope          [fail] @oh-my-pi/pi-tui is maintained by can1357, not buckeyestudio; this token cannot publish it, and trusted publishing from CI is the route that can
+   approval       [pass] approved by board on 2026-10-03
+
+overall: fail
+```
+
+Without `--approved-by` the approval check fails, so no release can be gated green
+by accident:
+
+```
+$ ./scripts/npm-release-gate.sh --package @buckeyestudio/toh@0.1.1-rc.3
+   approval       [fail] no approval recorded, pass --approved-by <id>; the board approves each release
+overall: fail
+```
+
+The gate **never uploads**. It is a precondition, not a publisher. Upload stays a
+separate, deliberate step so that approving one version cannot quietly ship
+another. `--check-registry` adds the one network call that says whether the
+version is already taken. Only `E404` counts as free; any other failure reports
+that it could not ask, so an unreachable registry can never read as a pass.
+`--json` emits machine-readable results, and `--report`
+writes the same evidence file shape as `npm-verify-auth.sh`.
+
+Checks, and what each one actually catches for this org:
+
+| Check | Catches |
+| --- | --- |
+| `manifest` | missing, malformed, or versionless `package.json` |
+| `not_private` | `oh-my-pi`'s root manifest is `private: true`, so it is not publishable at all |
+| `scope` | a package owned by another account, which no token can fix |
+| `version_free` | a version already on the registry, or a registry we could not reach |
+| `approval` | an unrecorded approval, or an approval the expired token cannot act on |
+
+### Nothing is releasable yet
+
+Run against the fork, the gate fails on `not_private` and `scope`. That is the
+correct result, not a bug, and it is worth stating plainly:
+
+- `labz-apps/oh-my-pi` root `package.json` is `"private": true`.
+- The publishable parts are `packages/*`, all named `@oh-my-pi/*`, maintained by
+  `can1357`.
+- This token is `buckeyestudio`, so it cannot write any of them.
+- The perf work in this org is also not ready to release: the upstream sync has
+  not landed yet, so there is no new version to ship.
+
+So an approval to "push a new release" currently has nothing behind it that this
+token can publish. Publishing a fork of the upstream scope needs npm trusted
+publishing (OIDC) from CI, which is a separate piece of work.
+
 ## What `--probe` proves
 
 The interesting question is not "can npm log in" but "will `npm publish` stop
@@ -115,5 +181,8 @@ then drop the token entirely.
 | 2026-10-03 | linux x64, node v24.21.0, npm 11.19.0 | `npm whoami` -> `buckeyestudio`, no prompt |
 | 2026-10-03 | same | token metadata: `package:write`, `bypass_2fa: true`, expires 2026-10-10 |
 | 2026-10-03 | same | publish probe -> E403 at version rule, nothing published |
+| 2026-10-03 | same | release gate -> `omp@0.0.0` fails `not_private` and `scope` |
+| 2026-10-03 | same | release gate -> `@oh-my-pi/pi-tui@18.5.0` fails `scope`, maintainer `can1357` |
+| 2026-10-03 | same | release gate -> `@buckeyestudio/toh@0.1.1-rc.2` fails `version_free`, already published |
 
 Reproduce with `./scripts/npm-verify-auth.sh --probe` after `provision`.
