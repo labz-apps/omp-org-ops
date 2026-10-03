@@ -145,6 +145,15 @@ jobs:
               --check-registry >/dev/null
           fi
 
+          # An unreachable registry must not read as "the version is free".
+          if out="$(NPM_REGISTRY=https://registry.invalid/ \
+            $gate --package @buckeyestudio/toh@9.9.9 --approved-by board \
+            --check-registry 2>&1)"; then
+            echo "expected an unreachable registry to fail, not to pass"
+            exit 1
+          fi
+          printf '%s' "$out" | grep -q 'version_free   \[fail\]'
+
           # Usage errors are distinguishable from check failures.
           $gate --package bogus >/dev/null 2>&1 && {
             echo "expected a versionless --package to be a usage error"; exit 1;

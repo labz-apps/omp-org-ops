@@ -178,12 +178,22 @@ check_version_free() {
 	local out rc=0
 
 	set +e
-	out="$(npm view "${NAME}@${VERSION}" version 2>&1)"
+	# npm ignores a bare NPM_REGISTRY, so pass the registry it actually queried.
+	# Otherwise the report can name one registry and check another.
+	out="$(npm view "${NAME}@${VERSION}" version --registry="$REGISTRY" 2>&1)"
 	rc=$?
 	set -e
 
 	if [[ $rc -eq 0 ]]; then
-		record version_free fail "${NAME}@${VERSION} is already published, bump the version"
+		record version_free fail "${NAME}@${VERSION} is already on ${REGISTRY}, bump the version"
+		return 1
+	fi
+
+	# Only E404 means "this version is free". Every other non-zero exit means we
+	# could not ask, which must not read as a pass: reporting a version as free
+	# that was never checked is how you overwrite a good release.
+	if [[ $rc -ne 0 ]] && ! printf '%s' "$out" | grep -q 'E404'; then
+		record version_free fail "could not ask ${REGISTRY}: $(printf '%s' "$out" | grep -m1 'npm error' | sed 's/^npm error //')"
 		return 1
 	fi
 

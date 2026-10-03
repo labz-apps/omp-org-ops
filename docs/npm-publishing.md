@@ -74,7 +74,9 @@ overall: fail
 The gate **never uploads**. It is a precondition, not a publisher. Upload stays a
 separate, deliberate step so that approving one version cannot quietly ship
 another. `--check-registry` adds the one network call that says whether the
-version is already taken, `--json` emits machine-readable results, and `--report`
+version is already taken. Only `E404` counts as free; any other failure reports
+that it could not ask, so an unreachable registry can never read as a pass.
+`--json` emits machine-readable results, and `--report`
 writes the same evidence file shape as `npm-verify-auth.sh`.
 
 Checks, and what each one actually catches for this org:
@@ -84,7 +86,7 @@ Checks, and what each one actually catches for this org:
 | `manifest` | missing, malformed, or versionless `package.json` |
 | `not_private` | `oh-my-pi`'s root manifest is `private: true`, so it is not publishable at all |
 | `scope` | a package owned by another account, which no token can fix |
-| `version_free` | a version already on the registry, which would burn the name |
+| `version_free` | a version already on the registry, or a registry we could not reach |
 | `approval` | an unrecorded approval, or an approval the expired token cannot act on |
 
 ### Nothing is releasable yet
