@@ -13,6 +13,7 @@
 #      (cross-repo paths are written owner/repo-qualified and are skipped)
 #   3. every doc still carries the sections the programme depends on
 #   4. every fenced code block is balanced
+#   5. the measurement contract still names the fields the schema enforces
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -111,10 +112,22 @@ if [ -f "$contract" ]; then
     'What must be held constant' \
     'Harness command' \
     'The result file' \
+    'Run integrity' \
     'How deltas are computed' \
     'Importing and verifying' \
     'Failure modes to recognise'; do
     require_section "$contract" "$heading"
+  done
+
+  # The two held-constant rules that are enforced by a field name, not by
+  # convention. If a rule is renamed out of the contract while the schema still
+  # enforces it, the runbook and the code have drifted apart, and a harness that
+  # follows the runbook starts failing imports. Keep the field names themselves
+  # checked, so renaming one is a deliberate, visible change.
+  for field in 'harness.build' 'commit.shaAtFinish' 'machine.concurrentRuns'; do
+    if ! grep -qF "\`$field\`" "$contract"; then
+      fail "$contract: no longer documents the enforced field: $field"
+    fi
   done
 else
   fail "missing required document: $contract"
@@ -141,4 +154,4 @@ if [ "$failures" -ne 0 ]; then
   exit 1
 fi
 
-printf 'ok   %d document(s) checked: links, local paths, sections, fences\n' "$checked"
+printf 'ok   %d document(s) checked: links, local paths, sections, enforced fields, fences\n' "$checked"

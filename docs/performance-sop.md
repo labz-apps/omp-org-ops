@@ -106,8 +106,10 @@ attribution, so the experiment has to fit in one.
 
 ## Stage 2 — benchmark
 
-The full protocol, including what must be held constant and how the machine is
-identified, is in `docs/measurement-contract.md`. In short:
+The full protocol, including what must be held constant, how the machine is
+identified, and the two rules the schema enforces by field name — build type,
+and the state of the tree and the machine during the run — is in
+`docs/measurement-contract.md`. In short:
 
 ```bash
 # quick mode: local iteration, indicative only, never published
@@ -216,6 +218,9 @@ A performance change is done when all of these are true.
 | A p50 win that regresses p95 | The user feels the p95. It is a regression |
 | Editing a leaderboard result file by hand | Breaks the chain from harness to page |
 | A result file with no pull request number | Imports, but never becomes a leaderboard row |
+| Comparing a compiled binary run with a source run | Different programs. `harness.build` is in the series key, so there is no delta |
+| A baseline taken before a rebase landed in the shared checkout | `commit.shaAtFinish` will not match `commit.sha`; re-measure on one commit |
+| A run taken while another run of the same benchmark was on the machine | `machine.concurrentRuns` is above 1: kept as evidence, never published |
 | Measuring a fork that is behind upstream | The number dies at the next sync |
 | "Feels much faster" with no harness run | Not evidence, and never will be |
 
