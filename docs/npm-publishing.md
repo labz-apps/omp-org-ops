@@ -23,8 +23,12 @@ printf '%s' "$TOKEN" | ./scripts/npm-auth.sh provision --token-stdin
 ```
 
 `provision` is idempotent and replaces only the `_authToken` line for the
-registry, so it never clobbers unrelated npmrc settings. It creates the parent
-directory if needed, writes through a temp file, and forces mode `0600`.
+registry, so it never clobbers unrelated npmrc settings. It removes both the
+canonical npm key form and the scheme-less variant, so re-running it on a
+hand-written npmrc cannot leave a second credential behind. It creates the
+parent directory if needed, writes through a temp file, and forces mode `0600`.
+
+The scripts run on Linux and macOS.
 
 Environment:
 
