@@ -139,8 +139,11 @@ jobs:
           }
           printf '%s' "$out" | grep -q 'approval       \[fail\] no approval recorded'
 
-          # An approved release does gate green.
-          $gate --package @buckeyestudio/toh@9.9.9 --approved-by board >/dev/null
+          # An approval is recorded when one is given. This asserts the approval
+          # check alone, not overall: on a runner there is no npm token, so the
+          # ownership check correctly fails and would mask the assertion.
+          out="$($gate --package @buckeyestudio/toh@9.9.9 --approved-by board 2>&1)" || true
+          printf '%s' "$out" | grep -q 'approval       \[pass\] approved by board'
 
           # The gate reports, it does not upload: consulting the registry must
           # surface a version_free check, and reject one that is already taken.
@@ -153,7 +156,7 @@ jobs:
           else
             echo "::notice::registry unreachable or fixture absent, skipping the taken-version assert"
             $gate --package @buckeyestudio/toh@9.9.9 --approved-by board \
-              --check-registry >/dev/null
+              --check-registry 2>&1 | grep -q 'version_free'
           fi
 
           # An unreachable registry must not read as "the version is free".
@@ -175,10 +178,12 @@ jobs:
 
           # A report records the approval and states that nothing was uploaded.
           $gate --package @buckeyestudio/toh@9.9.9 --approved-by board \
-            --report "$RUNNER_TEMP/gate-report" >/dev/null
-          grep -q '^approved_by=board$' "$RUNNER_TEMP/gate-report/npm-release-gate-report.txt"
-          grep -q '^result=pass$' "$RUNNER_TEMP/gate-report/npm-release-gate-report.txt"
-          grep -q '^uploaded=no$' "$RUNNER_TEMP/gate-report/npm-release-gate-report.txt"
+            --report "$RUNNER_TEMP/gate-report" >/dev/null || true
+          report="$RUNNER_TEMP/gate-report/npm-release-gate-report.txt"
+          grep -q '^approved_by=board$' "$report"
+          grep -q '^result=pass$' "$report" || grep -q '^result=fail$' "$report"
+          grep -q '^uploaded=no$' "$report"
+          grep -q '^package=@buckeyestudio/toh@9.9.9$' "$report"
 
           # The gate must never be able to upload, whatever it is handed.
           if grep -qE 'npm +publish|npm +unpublish|npm +dist-tag|npm +deprecate' scripts/npm-release-gate.sh; then

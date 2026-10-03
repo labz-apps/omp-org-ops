@@ -236,7 +236,7 @@ for obj in data.get("objects", []):
 }
 
 emit_table() {
-	local name status detail
+	local name status detail row
 	for row in "${RESULTS[@]}"; do
 		IFS=$'\x1f' read -r name status detail <<<"$row"
 		printf '   %-14s %-4s %s\n' "$name" "[$status]" "$detail"
@@ -244,7 +244,7 @@ emit_table() {
 }
 
 emit_json() {
-	local name status detail first=1
+	local name status detail row first=1 ok=1
 	printf '{\n  "package": "%s@%s",\n  "checks": [\n' "$NAME" "$VERSION"
 	for row in "${RESULTS[@]}"; do
 		IFS=$'\x1f' read -r name status detail <<<"$row"
@@ -258,7 +258,6 @@ emit_json() {
 		printf '  "result": "fail"\n}\n'
 		return
 	fi
-	local ok=1
 	for row in "${RESULTS[@]}"; do
 		IFS=$'\x1f' read -r _ status _ <<<"$row"
 		[[ "$status" == "fail" ]] && ok=0
